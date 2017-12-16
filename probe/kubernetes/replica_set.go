@@ -13,7 +13,7 @@ import (
 
 // These constants are keys used in node metadata
 const (
-	FullyLabeledReplicas = "kubernetes_fully_labeled_replicas"
+	FullyLabeledReplicas = report.KubernetesFullyLabeledReplicas
 )
 
 // ReplicaSet represents a Kubernetes replica set
@@ -53,10 +53,15 @@ func (r *replicaSet) AddParent(topology, id string) {
 }
 
 func (r *replicaSet) GetNode(probeID string) report.Node {
+	// Spec.Replicas can be omitted, and the pointer will be nil. It defaults to 1.
+	desiredReplicas := 1
+	if r.Spec.Replicas != nil {
+		desiredReplicas = int(*r.Spec.Replicas)
+	}
 	return r.MetaNode(report.MakeReplicaSetNodeID(r.UID())).WithLatests(map[string]string{
 		ObservedGeneration:    fmt.Sprint(r.Status.ObservedGeneration),
 		Replicas:              fmt.Sprint(r.Status.Replicas),
-		DesiredReplicas:       fmt.Sprint(r.Spec.Replicas),
+		DesiredReplicas:       fmt.Sprint(desiredReplicas),
 		FullyLabeledReplicas:  fmt.Sprint(r.Status.FullyLabeledReplicas),
 		report.ControlProbeID: probeID,
 	}).WithParents(r.parents).WithLatestActiveControls(ScaleUp, ScaleDown)

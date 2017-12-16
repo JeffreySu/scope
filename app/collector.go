@@ -29,6 +29,7 @@ const reportQuantisationInterval = 3 * time.Second
 // interface for parts of the app, and several experimental components.
 type Reporter interface {
 	Report(context.Context, time.Time) (report.Report, error)
+	HasReports(context.Context, time.Time) (bool, error)
 	HasHistoricReports() bool
 	WaitOn(context.Context, chan struct{})
 	UnWait(context.Context, chan struct{})
@@ -152,9 +153,26 @@ func (c *collector) Report(_ context.Context, timestamp time.Time) (report.Repor
 	c.clean()
 	c.quantise()
 
-	rpt := c.merger.Merge(c.reports).Upgrade()
+	for i := range c.reports {
+		c.reports[i] = c.reports[i].Upgrade()
+	}
+
+	rpt := c.merger.Merge(c.reports)
 	c.cached = &rpt
 	return rpt, nil
+}
+
+// HasReports indicates whether the collector contains reports between
+// timestamp-app.window and timestamp.
+func (c *collector) HasReports(ctx context.Context, timestamp time.Time) (bool, error) {
+	c.mtx.Lock()
+	defer c.mtx.Unlock()
+
+	if len(c.timestamps) < 1 {
+		return false, nil
+	}
+
+	return !c.timestamps[0].After(timestamp) && !c.timestamps[len(c.reports)-1].Before(timestamp.Add(-c.window)), nil
 }
 
 // HasHistoricReports indicates whether the collector contains reports
@@ -217,6 +235,12 @@ type StaticCollector report.Report
 // Reporter.
 func (c StaticCollector) Report(context.Context, time.Time) (report.Report, error) {
 	return report.Report(c), nil
+}
+
+// HasReports indicates whether the collector contains reports between
+// timestamp-app.window and timestamp.
+func (c StaticCollector) HasReports(context.Context, time.Time) (bool, error) {
+	return true, nil
 }
 
 // HasHistoricReports indicates whether the collector contains reports
